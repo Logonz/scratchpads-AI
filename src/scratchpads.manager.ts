@@ -256,15 +256,21 @@ export class ScratchpadsManager {
       return;
     }
 
-    const maxChars = 6000;
-    this.debug('autoRenameScratchpadFromDocument: requesting AI suggestion', {
-      maxChars,
-      ext: path.extname(currentFileName),
-    });
-    const suggestion = await AIFilenameService.suggestFilename(content.slice(0, maxChars), path.extname(currentFileName));
-    this.debug('autoRenameScratchpadFromDocument: AI suggestion completed', {
-      suggestion,
-    });
+    let suggestion: string | undefined;
+    try {
+      const maxChars = 6000;
+      this.debug('autoRenameScratchpadFromDocument: requesting AI suggestion', {
+        maxChars,
+        ext: path.extname(currentFileName),
+      });
+      suggestion = await AIFilenameService.suggestFilename(content.slice(0, maxChars), path.extname(currentFileName));
+      this.debug('autoRenameScratchpadFromDocument: AI suggestion completed', {
+        suggestion,
+      });
+    } catch (error) {
+      console.error('[Scratchpads] autoRenameScratchpadFromDocument: AI suggestion failed', error);
+      return;
+    }
 
     if (!suggestion || suggestion === currentBaseName) {
       this.debug('autoRenameScratchpadFromDocument: skipped due to empty or unchanged suggestion', {
@@ -453,10 +459,9 @@ export class ScratchpadsManager {
     const editorPath = path.dirname(document.fileName);
     const normalizedEditorPath = this.normalizePath(editorPath);
     const normalizedProjectPath = this.normalizePath(Config.projectScratchpadsPath);
-    const normalizedRootPath = this.normalizePath(Config.scratchpadsRootPath);
 
     const matchesProjectFolder = normalizedEditorPath === normalizedProjectPath;
-    const isUnderScratchpadsRoot = this.isPathInsideRoot(normalizedEditorPath, normalizedRootPath);
+    const isUnderProjectScratchpads = this.isPathInsideRoot(normalizedEditorPath, normalizedProjectPath);
 
     this.debug('isScratchpadDocument: path evaluation', {
       documentFileName: document.fileName,
@@ -465,12 +470,11 @@ export class ScratchpadsManager {
       projectScratchpadsPath: Config.projectScratchpadsPath,
       normalizedProjectPath,
       scratchpadsRootPath: Config.scratchpadsRootPath,
-      normalizedRootPath,
       matchesProjectFolder,
-      isUnderScratchpadsRoot,
+      isUnderProjectScratchpads,
     });
 
-    return matchesProjectFolder || isUnderScratchpadsRoot;
+    return matchesProjectFolder || isUnderProjectScratchpads;
   }
 
   private isScratchpadEditor(editor?: vscode.TextEditor) {
