@@ -3,6 +3,7 @@ import { Config } from './config';
 import { FiletypesManager } from './filetypes.manager';
 import { ScratchpadTreeProvider } from './scratchpad-tree-provider';
 import { ScratchpadsManager } from './scratchpads.manager';
+import { CONFIG_AUTO_RENAME_FROM_CONTENT } from './consts';
 import Utils from './utils';
 
 /**
@@ -60,6 +61,14 @@ export async function activate(context: vscode.ExtensionContext) {
     'scratchpads.openScratchpad': wrapCommand('openScratchpad', () => scratchpadsManager.openScratchpad()),
     'scratchpads.openLatestScratchpad': wrapCommand('openLatestScratchpad', () => scratchpadsManager.openLatestScratchpad()),
     'scratchpads.renameScratchpad': wrapCommand('renameScratchpad', () => scratchpadsManager.renameScratchpad()),
+    'scratchpads.autoRenameScratchpad': wrapCommand('autoRenameScratchpad', async () => {
+      const activeDocument = vscode.window.activeTextEditor?.document;
+      if (!activeDocument) {
+        vscode.window.showInformationMessage('Scratchpads: Open a scratchpad file first');
+        return;
+      }
+      await scratchpadsManager.autoRenameScratchpadFromDocument(activeDocument);
+    }),
     'scratchpads.removeAllScratchpads': wrapCommand('removeAllScratchpads', () => scratchpadsManager.removeAllScratchpads()),
     'scratchpads.removeScratchpad': wrapCommand('removeScratchpad', () => scratchpadsManager.removeScratchpad()),
     'scratchpads.newFiletype': wrapCommand('newFiletype', () => scratchpadsManager.newFiletype()),
@@ -79,6 +88,18 @@ export async function activate(context: vscode.ExtensionContext) {
     const cmd = vscode.commands.registerCommand(command, commands[command]);
     context.subscriptions.push(cmd);
   }
+
+
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (document) => {
+      const autoRenameEnabled = Config.getExtensionConfiguration(CONFIG_AUTO_RENAME_FROM_CONTENT);
+      if (!autoRenameEnabled) {
+        return;
+      }
+
+      await scratchpadsManager.autoRenameScratchpadFromDocument(document);
+    }),
+  );
 
   vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
     const affectedFolder = event.affectsConfiguration('scratchpads.scratchpadsFolder');
