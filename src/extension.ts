@@ -3,6 +3,7 @@ import { Config } from './config';
 import { FiletypesManager } from './filetypes.manager';
 import { ScratchpadTreeProvider } from './scratchpad-tree-provider';
 import { ScratchpadsManager } from './scratchpads.manager';
+import { CONFIG_AUTO_RENAME_FROM_CONTENT, CONFIG_VERBOSE_LOGGING } from './consts';
 import Utils from './utils';
 
 /**
@@ -22,6 +23,42 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   const scratchpadsManager = new ScratchpadsManager(new FiletypesManager());
+  const inFlightAutoRename = new Set<string>();
+
+  const normalizePathForKey = (inputPath: string): string => {
+    const resolved = inputPath.replace(/[\\/]+$/, '');
+    if (process.platform === 'win32') {
+      return resolved.toLowerCase();
+    }
+    return resolved;
+  };
+
+  const runAutoRenameWithGuard = async (document: vscode.TextDocument): Promise<void> => {
+    const inFlightKey = normalizePathForKey(document.fileName);
+    if (inFlightAutoRename.has(inFlightKey)) {
+      console.warn('[Scratchpads] auto rename already in progress for file, skipping re-entrant run', {
+        inFlightKey,
+      });
+      return;
+    }
+
+    inFlightAutoRename.add(inFlightKey);
+    try {
+      logVerbose('auto rename invoking manager', { fileName: document.fileName });
+      await scratchpadsManager.autoRenameScratchpadFromDocument(document);
+      logVerbose('auto rename manager call completed', { fileName: document.fileName });
+    } finally {
+      inFlightAutoRename.delete(inFlightKey);
+    }
+  };
+
+
+  const logVerbose = (message: string, ...meta: unknown[]) => {
+    const verboseLogging = Config.getExtensionConfiguration(CONFIG_VERBOSE_LOGGING) as boolean;
+    if (verboseLogging) {
+      console.log('[Scratchpads]', message, ...meta);
+    }
+  };
 
   // Register tree view
   const treeViewProvider = new ScratchpadTreeProvider();
@@ -60,6 +97,26 @@ export async function activate(context: vscode.ExtensionContext) {
     'scratchpads.openScratchpad': wrapCommand('openScratchpad', () => scratchpadsManager.openScratchpad()),
     'scratchpads.openLatestScratchpad': wrapCommand('openLatestScratchpad', () => scratchpadsManager.openLatestScratchpad()),
     'scratchpads.renameScratchpad': wrapCommand('renameScratchpad', () => scratchpadsManager.renameScratchpad()),
+    'scratchpads.autoRenameScratchpad': wrapCommand('autoRenameScratchpad', async () => {
+      const activeDocument = vscode.window.activeTextEditor?.document;
+      if (!activeDocument) {
+        vscode.window.showInformationMessage('Scratchpads: Open a scratchpad file first');
+        return;
+      }
+
+      if (activeDocument.isDirty) {
+        logVerbose('autoRenameScratchpad command: saving dirty active document before rename');
+        await activeDocument.save();
+
+        const autoRenameEnabled = Config.getExtensionConfiguration(CONFIG_AUTO_RENAME_FROM_CONTENT) as boolean;
+        if (autoRenameEnabled) {
+          logVerbose('autoRenameScratchpad command: save listener will perform auto-rename, skipping direct call');
+          return;
+        }
+      }
+
+      await runAutoRenameWithGuard(activeDocument);
+    }),
     'scratchpads.removeAllScratchpads': wrapCommand('removeAllScratchpads', () => scratchpadsManager.removeAllScratchpads()),
     'scratchpads.removeScratchpad': wrapCommand('removeScratchpad', () => scratchpadsManager.removeScratchpad()),
     'scratchpads.newFiletype': wrapCommand('newFiletype', () => scratchpadsManager.newFiletype()),
@@ -79,6 +136,25 @@ export async function activate(context: vscode.ExtensionContext) {
     const cmd = vscode.commands.registerCommand(command, commands[command]);
     context.subscriptions.push(cmd);
   }
+
+
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (document) => {
+      const autoRenameEnabled = Config.getExtensionConfiguration(CONFIG_AUTO_RENAME_FROM_CONTENT);
+      logVerbose('onDidSaveTextDocument: save event received', {
+        fileName: document.fileName,
+        autoRenameEnabled,
+        isDirty: document.isDirty,
+      });
+
+      if (!autoRenameEnabled) {
+        logVerbose('onDidSaveTextDocument: auto rename is disabled, skipping');
+        return;
+      }
+
+      await runAutoRenameWithGuard(document);
+    }),
+  );
 
   vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
     const affectedFolder = event.affectsConfiguration('scratchpads.scratchpadsFolder');
