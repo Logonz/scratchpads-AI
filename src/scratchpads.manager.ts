@@ -6,13 +6,16 @@ import { Config } from './config';
 import {
   CONFIG_AUTO_FORMAT,
   CONFIG_AUTO_PASTE,
+  CONFIG_AUTO_RENAME_MIN_CHARS,
   CONFIG_DEFAULT_FILETYPE,
   CONFIG_FILE_PREFIX,
   CONFIG_PROMPT_FOR_FILENAME,
   CONFIG_PROMPT_FOR_REMOVAL,
   CONFIG_RENAME_WITH_EXTENSION,
+  CONFIG_VERBOSE_LOGGING,
   DEFAULT_FILE_PREFIX,
 } from './consts';
+import { AIFilenameService } from './ai-filename';
 import { Filetype, FiletypesManager } from './filetypes.manager';
 import { InputBox } from './input-box';
 import Utils from './utils';
@@ -23,6 +26,14 @@ export class ScratchpadsManager {
   constructor(ftm: FiletypesManager) {
     this.filetypeManager = ftm;
   }
+
+  private debug(message: string, ...meta: unknown[]): void {
+    const verboseLogging = Config.getExtensionConfiguration(CONFIG_VERBOSE_LOGGING) as boolean;
+    if (verboseLogging) {
+      console.log('[Scratchpads]', message, ...meta);
+    }
+  }
+
 
   /**
    * Creates a new scratchpad file with the specified or selected filetype.
@@ -190,6 +201,141 @@ export class ScratchpadsManager {
     }
   }
 
+
+  /**
+   * Automatically renames a scratchpad file based on its content.
+   * Uses VS Code Language Model API first (if configured), then optional OpenAI fallback.
+   */
+  public async autoRenameScratchpadFromDocument(document: vscode.TextDocument): Promise<void> {
+    this.debug('autoRenameScratchpadFromDocument: invoked', {
+      fileName: document.fileName,
+      isDirty: document.isDirty,
+      languageId: document.languageId,
+      lineCount: document.lineCount,
+      configuredProjectScratchpadsPath: Config.projectScratchpadsPath,
+      configuredScratchpadsRootPath: Config.scratchpadsRootPath,
+    });
+
+    if (!this.isScratchpadDocument(document)) {
+      this.debug('autoRenameScratchpadFromDocument: skipped because document is not a scratchpad');
+      return;
+    }
+
+    const content = document.getText().trim();
+    const minChars = (Config.getExtensionConfiguration(CONFIG_AUTO_RENAME_MIN_CHARS) as number) || 20;
+    this.debug('autoRenameScratchpadFromDocument: content gathered', {
+      contentLength: content.length,
+      minChars,
+      preview: content.slice(0, 120),
+    });
+
+    if (content.length < minChars) {
+      this.debug('autoRenameScratchpadFromDocument: skipped because content is below min threshold');
+      return;
+    }
+
+    const currentFilePath = document.fileName;
+    const currentFileName = path.basename(currentFilePath);
+    const currentBaseName = path.basename(currentFileName, path.extname(currentFileName));
+    const configuredPrefix = (Config.getExtensionConfiguration(CONFIG_FILE_PREFIX) as string) || DEFAULT_FILE_PREFIX;
+    const escapedPrefix = configuredPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const scratchNamePattern = new RegExp(`^${escapedPrefix}\\d*$`);
+    this.debug('autoRenameScratchpadFromDocument: current file context', {
+      currentFilePath,
+      currentFileName,
+      currentBaseName,
+      configuredPrefix,
+      scratchNamePattern: scratchNamePattern.source,
+    });
+
+    if (!scratchNamePattern.test(currentBaseName)) {
+      this.debug('autoRenameScratchpadFromDocument: skipped because file name does not match scratch prefix pattern', {
+        currentBaseName,
+        configuredPrefix,
+      });
+      return;
+    }
+
+    let suggestion: string | undefined;
+    try {
+      const maxChars = 6000;
+      this.debug('autoRenameScratchpadFromDocument: requesting AI suggestion', {
+        maxChars,
+        ext: path.extname(currentFileName),
+      });
+      suggestion = await AIFilenameService.suggestFilename(content.slice(0, maxChars), path.extname(currentFileName));
+      this.debug('autoRenameScratchpadFromDocument: AI suggestion completed', {
+        suggestion,
+      });
+    } catch (error) {
+      console.error('[Scratchpads] autoRenameScratchpadFromDocument: AI suggestion failed', error);
+      return;
+    }
+
+    if (!suggestion || suggestion === currentBaseName) {
+      this.debug('autoRenameScratchpadFromDocument: skipped due to empty or unchanged suggestion', {
+        suggestion,
+        currentBaseName,
+      });
+      return;
+    }
+
+    const finalFileName = AIFilenameService.buildFinalFilename(suggestion, currentFilePath);
+    const newFilePath = Utils.getScratchpadFilePath(finalFileName);
+    this.debug('autoRenameScratchpadFromDocument: computed destination', {
+      finalFileName,
+      newFilePath,
+    });
+
+    const normalizedCurrentFilePath = this.normalizePath(currentFilePath);
+    const normalizedNewFilePath = this.normalizePath(newFilePath);
+
+    if (normalizedNewFilePath === normalizedCurrentFilePath) {
+      this.debug('autoRenameScratchpadFromDocument: skipped because destination path equals current path', {
+        normalizedCurrentFilePath,
+        normalizedNewFilePath,
+      });
+      return;
+    }
+
+    if (fs.existsSync(newFilePath)) {
+      this.debug('autoRenameScratchpadFromDocument: skipped because destination already exists', {
+        newFilePath,
+      });
+      return;
+    }
+
+    try {
+      const openEditor = Utils.findOpenEditor(currentFilePath);
+      this.debug('autoRenameScratchpadFromDocument: open editor lookup result', {
+        hasOpenEditor: Boolean(openEditor),
+      });
+
+      if (openEditor?.document.isDirty) {
+        console.warn('[Scratchpads] autoRenameScratchpadFromDocument: active editor is dirty during auto-rename. Skipping rename to avoid save-loop/re-entrancy risks.');
+        return;
+      }
+
+      this.debug('autoRenameScratchpadFromDocument: renaming file', {
+        from: currentFilePath,
+        to: newFilePath,
+      });
+      await Utils.renameFile(currentFilePath, newFilePath);
+      this.debug('autoRenameScratchpadFromDocument: rename successful');
+
+      if (openEditor) {
+        this.debug('autoRenameScratchpadFromDocument: refreshing editor tabs for renamed file');
+        await Utils.closeAllTabsForFile(currentFilePath);
+        await Utils.openFile(newFilePath);
+        this.debug('autoRenameScratchpadFromDocument: reopened renamed file in editor');
+      }
+
+      this.debug('autoRenameScratchpadFromDocument: completed');
+    } catch (error) {
+      console.error('[Scratchpads] autoRenameScratchpadFromDocument error:', error);
+    }
+  }
+
   /**
    * Remove a single scratchpad file
    */
@@ -309,13 +455,58 @@ export class ScratchpadsManager {
    *
    * @param {TextEditor} editor The tab to inspect
    */
+  private isScratchpadDocument(document: vscode.TextDocument): boolean {
+    const editorPath = path.dirname(document.fileName);
+    const normalizedEditorPath = this.normalizePath(editorPath);
+    const normalizedProjectPath = this.normalizePath(Config.projectScratchpadsPath);
+
+    const matchesProjectFolder = normalizedEditorPath === normalizedProjectPath;
+    const isUnderProjectScratchpads = this.isPathInsideRoot(normalizedEditorPath, normalizedProjectPath);
+
+    this.debug('isScratchpadDocument: path evaluation', {
+      documentFileName: document.fileName,
+      editorPath,
+      normalizedEditorPath,
+      projectScratchpadsPath: Config.projectScratchpadsPath,
+      normalizedProjectPath,
+      scratchpadsRootPath: Config.scratchpadsRootPath,
+      matchesProjectFolder,
+      isUnderProjectScratchpads,
+    });
+
+    return matchesProjectFolder || isUnderProjectScratchpads;
+  }
+
   private isScratchpadEditor(editor?: vscode.TextEditor) {
     if (editor) {
-      const editorPath = path.dirname(editor.document.fileName);
-      return editorPath === Config.projectScratchpadsPath;
+      return this.isScratchpadDocument(editor.document);
     }
 
     return false;
+  }
+
+  private normalizePath(inputPath: string): string {
+    const resolved = path.resolve(inputPath);
+    const withoutTrailing = resolved.replace(/[\\/]+$/, '');
+
+    if (process.platform === 'win32') {
+      return withoutTrailing.toLowerCase();
+    }
+
+    return withoutTrailing;
+  }
+
+  private isPathInsideRoot(candidatePath: string, rootPath: string): boolean {
+    if (!candidatePath || !rootPath) {
+      return false;
+    }
+
+    if (candidatePath === rootPath) {
+      return true;
+    }
+
+    const relativePath = path.relative(rootPath, candidatePath);
+    return relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
   }
 
   /**

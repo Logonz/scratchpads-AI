@@ -87,6 +87,7 @@ A powerful VSCode extension that lets you create temporary files for quick notes
 | Command                                | Description                    | Use Case                               |
 | -------------------------------------- | ------------------------------ | -------------------------------------- |
 | `Scratchpads: Rename scratchpad`       | Rename any scratchpad file     | Better organization and identification |
+| `Scratchpads: Auto rename current scratchpad from content` | Generate a filename from file content | Let AI suggest meaningful names quickly |
 | `Scratchpads: Remove scratchpad`       | Delete a specific scratchpad   | Clean up individual files              |
 | `Scratchpads: Remove all scratchpads`  | Delete all scratchpads at once | Complete cleanup                       |
 | `Scratchpads: New filetype`            | Add custom file extensions     | Support for new languages or formats   |
@@ -116,6 +117,12 @@ Enable `Scratchpads: Show In Explorer` in settings to:
 | **Prompt For Removal**    | Confirm before deleting all           | `true`      | Safety against accidents     |
 | **Scratchpads Folder**    | Custom storage location               | Auto        | You want specific location   |
 | **Rename With Extension** | Include extension in rename           | `false`     | You want full control        |
+| **Auto Rename From Content** | Rename on save using AI filename suggestions | `false` | You want content-based names automatically |
+| **Verbose Logging** | Enable detailed `[Scratchpads]` debug logs in the extension host console | `false` | You are troubleshooting rename or provider behavior |
+| **Rename Provider** | Choose AI backend (`auto`, `vscode`, `openai`) | `auto` | You want explicit provider selection |
+| **Auto Rename Min Chars** | Minimum content size before rename runs | `20` | Avoid renaming tiny files |
+| **OpenAI API Key** | Optional fallback key for OpenAI API | `""` | VS Code LM API is unavailable |
+| **OpenAI Model** | Model used for OpenAI fallback naming | `gpt-5-mini` | Tune quality/cost |
 
 ## 📝 **Filename Guidelines**
 
