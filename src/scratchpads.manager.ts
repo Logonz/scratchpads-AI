@@ -203,6 +203,8 @@ export class ScratchpadsManager {
       isDirty: document.isDirty,
       languageId: document.languageId,
       lineCount: document.lineCount,
+      configuredProjectScratchpadsPath: Config.projectScratchpadsPath,
+      configuredScratchpadsRootPath: Config.scratchpadsRootPath,
     });
 
     if (!this.isScratchpadDocument(document)) {
@@ -421,16 +423,58 @@ export class ScratchpadsManager {
    */
   private isScratchpadDocument(document: vscode.TextDocument): boolean {
     const editorPath = path.dirname(document.fileName);
-    return editorPath === Config.projectScratchpadsPath;
+    const normalizedEditorPath = this.normalizePath(editorPath);
+    const normalizedProjectPath = this.normalizePath(Config.projectScratchpadsPath);
+    const normalizedRootPath = this.normalizePath(Config.scratchpadsRootPath);
+
+    const matchesProjectFolder = normalizedEditorPath === normalizedProjectPath;
+    const isUnderScratchpadsRoot = this.isPathInsideRoot(normalizedEditorPath, normalizedRootPath);
+
+    console.log('[Scratchpads] isScratchpadDocument: path evaluation', {
+      documentFileName: document.fileName,
+      editorPath,
+      normalizedEditorPath,
+      projectScratchpadsPath: Config.projectScratchpadsPath,
+      normalizedProjectPath,
+      scratchpadsRootPath: Config.scratchpadsRootPath,
+      normalizedRootPath,
+      matchesProjectFolder,
+      isUnderScratchpadsRoot,
+    });
+
+    return matchesProjectFolder || isUnderScratchpadsRoot;
   }
 
   private isScratchpadEditor(editor?: vscode.TextEditor) {
     if (editor) {
-      const editorPath = path.dirname(editor.document.fileName);
-      return editorPath === Config.projectScratchpadsPath;
+      return this.isScratchpadDocument(editor.document);
     }
 
     return false;
+  }
+
+  private normalizePath(inputPath: string): string {
+    const resolved = path.resolve(inputPath);
+    const withoutTrailing = resolved.replace(/[\\/]+$/, '');
+
+    if (process.platform === 'win32') {
+      return withoutTrailing.toLowerCase();
+    }
+
+    return withoutTrailing;
+  }
+
+  private isPathInsideRoot(candidatePath: string, rootPath: string): boolean {
+    if (!candidatePath || !rootPath) {
+      return false;
+    }
+
+    if (candidatePath === rootPath) {
+      return true;
+    }
+
+    const relativePath = path.relative(rootPath, candidatePath);
+    return relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
   }
 
   /**
