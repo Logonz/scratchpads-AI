@@ -118,6 +118,7 @@ Enable `Scratchpads: Show In Explorer` in settings to:
 | **Scratchpads Folder**    | Custom storage location               | Auto        | You want specific location   |
 | **Rename With Extension** | Include extension in rename           | `false`     | You want full control        |
 | **Auto Rename From Content** | Rename on save using AI filename suggestions | `false` | You want content-based names automatically |
+| **Verbose Logging** | Enable detailed `[Scratchpads]` debug logs in the extension host console | `false` | You are troubleshooting rename or provider behavior |
 | **Rename Provider** | Choose AI backend (`auto`, `vscode`, `openai`) | `auto` | You want explicit provider selection |
 | **Auto Rename Min Chars** | Minimum content size before rename runs | `20` | Avoid renaming tiny files |
 | **OpenAI API Key** | Optional fallback key for OpenAI API | `""` | VS Code LM API is unavailable |

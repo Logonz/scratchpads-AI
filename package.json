@@ -64,6 +64,11 @@
           "default": false,
           "description": "Automatically rename scratchpads from file content when the file is saved"
         },
+        "scratchpads.verboseLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose [Scratchpads] debug logging in the extension host console"
+        },
         "scratchpads.renameProvider": {
           "type": "string",
           "default": "auto",

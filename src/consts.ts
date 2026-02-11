@@ -12,6 +12,7 @@ export const CONFIG_RENAME_PROVIDER = 'renameProvider';
 export const CONFIG_OPENAI_API_KEY = 'openAIApiKey';
 export const CONFIG_OPENAI_MODEL = 'openAIModel';
 export const CONFIG_AUTO_RENAME_MIN_CHARS = 'autoRenameMinChars';
+export const CONFIG_VERBOSE_LOGGING = 'verboseLogging';
 export const CONFIG_DEFAULT_FILETYPE = 'defaultFiletype';
 export const CONFIG_FILE_PREFIX = 'filePrefix';
 export const CONFIG_PROMPT_FOR_FILENAME = 'promptForFilename';

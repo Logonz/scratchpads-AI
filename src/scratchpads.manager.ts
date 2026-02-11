@@ -12,6 +12,7 @@ import {
   CONFIG_PROMPT_FOR_FILENAME,
   CONFIG_PROMPT_FOR_REMOVAL,
   CONFIG_RENAME_WITH_EXTENSION,
+  CONFIG_VERBOSE_LOGGING,
   DEFAULT_FILE_PREFIX,
 } from './consts';
 import { AIFilenameService } from './ai-filename';
@@ -25,6 +26,14 @@ export class ScratchpadsManager {
   constructor(ftm: FiletypesManager) {
     this.filetypeManager = ftm;
   }
+
+  private debug(message: string, ...meta: unknown[]): void {
+    const verboseLogging = Config.getExtensionConfiguration(CONFIG_VERBOSE_LOGGING) as boolean;
+    if (verboseLogging) {
+      console.log('[Scratchpads]', message, ...meta);
+    }
+  }
+
 
   /**
    * Creates a new scratchpad file with the specified or selected filetype.
@@ -198,7 +207,7 @@ export class ScratchpadsManager {
    * Uses VS Code Language Model API first (if configured), then optional OpenAI fallback.
    */
   public async autoRenameScratchpadFromDocument(document: vscode.TextDocument): Promise<void> {
-    console.log('[Scratchpads] autoRenameScratchpadFromDocument: invoked', {
+    this.debug('autoRenameScratchpadFromDocument: invoked', {
       fileName: document.fileName,
       isDirty: document.isDirty,
       languageId: document.languageId,
@@ -208,20 +217,20 @@ export class ScratchpadsManager {
     });
 
     if (!this.isScratchpadDocument(document)) {
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped because document is not a scratchpad');
+      this.debug('autoRenameScratchpadFromDocument: skipped because document is not a scratchpad');
       return;
     }
 
     const content = document.getText().trim();
     const minChars = (Config.getExtensionConfiguration(CONFIG_AUTO_RENAME_MIN_CHARS) as number) || 20;
-    console.log('[Scratchpads] autoRenameScratchpadFromDocument: content gathered', {
+    this.debug('autoRenameScratchpadFromDocument: content gathered', {
       contentLength: content.length,
       minChars,
       preview: content.slice(0, 120),
     });
 
     if (content.length < minChars) {
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped because content is below min threshold');
+      this.debug('autoRenameScratchpadFromDocument: skipped because content is below min threshold');
       return;
     }
 
@@ -231,7 +240,7 @@ export class ScratchpadsManager {
     const configuredPrefix = (Config.getExtensionConfiguration(CONFIG_FILE_PREFIX) as string) || DEFAULT_FILE_PREFIX;
     const escapedPrefix = configuredPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const scratchNamePattern = new RegExp(`^${escapedPrefix}\\d*$`);
-    console.log('[Scratchpads] autoRenameScratchpadFromDocument: current file context', {
+    this.debug('autoRenameScratchpadFromDocument: current file context', {
       currentFilePath,
       currentFileName,
       currentBaseName,
@@ -240,7 +249,7 @@ export class ScratchpadsManager {
     });
 
     if (!scratchNamePattern.test(currentBaseName)) {
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped because file name does not match scratch prefix pattern', {
+      this.debug('autoRenameScratchpadFromDocument: skipped because file name does not match scratch prefix pattern', {
         currentBaseName,
         configuredPrefix,
       });
@@ -248,17 +257,17 @@ export class ScratchpadsManager {
     }
 
     const maxChars = 6000;
-    console.log('[Scratchpads] autoRenameScratchpadFromDocument: requesting AI suggestion', {
+    this.debug('autoRenameScratchpadFromDocument: requesting AI suggestion', {
       maxChars,
       ext: path.extname(currentFileName),
     });
     const suggestion = await AIFilenameService.suggestFilename(content.slice(0, maxChars), path.extname(currentFileName));
-    console.log('[Scratchpads] autoRenameScratchpadFromDocument: AI suggestion completed', {
+    this.debug('autoRenameScratchpadFromDocument: AI suggestion completed', {
       suggestion,
     });
 
     if (!suggestion || suggestion === currentBaseName) {
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped due to empty or unchanged suggestion', {
+      this.debug('autoRenameScratchpadFromDocument: skipped due to empty or unchanged suggestion', {
         suggestion,
         currentBaseName,
       });
@@ -267,7 +276,7 @@ export class ScratchpadsManager {
 
     const finalFileName = AIFilenameService.buildFinalFilename(suggestion, currentFilePath);
     const newFilePath = Utils.getScratchpadFilePath(finalFileName);
-    console.log('[Scratchpads] autoRenameScratchpadFromDocument: computed destination', {
+    this.debug('autoRenameScratchpadFromDocument: computed destination', {
       finalFileName,
       newFilePath,
     });
@@ -276,7 +285,7 @@ export class ScratchpadsManager {
     const normalizedNewFilePath = this.normalizePath(newFilePath);
 
     if (normalizedNewFilePath === normalizedCurrentFilePath) {
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped because destination path equals current path', {
+      this.debug('autoRenameScratchpadFromDocument: skipped because destination path equals current path', {
         normalizedCurrentFilePath,
         normalizedNewFilePath,
       });
@@ -284,7 +293,7 @@ export class ScratchpadsManager {
     }
 
     if (fs.existsSync(newFilePath)) {
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped because destination already exists', {
+      this.debug('autoRenameScratchpadFromDocument: skipped because destination already exists', {
         newFilePath,
       });
       return;
@@ -292,30 +301,30 @@ export class ScratchpadsManager {
 
     try {
       const openEditor = Utils.findOpenEditor(currentFilePath);
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: open editor lookup result', {
+      this.debug('autoRenameScratchpadFromDocument: open editor lookup result', {
         hasOpenEditor: Boolean(openEditor),
       });
 
       if (openEditor?.document.isDirty) {
-        console.log('[Scratchpads] autoRenameScratchpadFromDocument: active editor is dirty during auto-rename. Skipping rename to avoid save-loop/re-entrancy risks.');
+        console.warn('[Scratchpads] autoRenameScratchpadFromDocument: active editor is dirty during auto-rename. Skipping rename to avoid save-loop/re-entrancy risks.');
         return;
       }
 
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: renaming file', {
+      this.debug('autoRenameScratchpadFromDocument: renaming file', {
         from: currentFilePath,
         to: newFilePath,
       });
       await Utils.renameFile(currentFilePath, newFilePath);
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: rename successful');
+      this.debug('autoRenameScratchpadFromDocument: rename successful');
 
       if (openEditor) {
-        console.log('[Scratchpads] autoRenameScratchpadFromDocument: refreshing editor tabs for renamed file');
+        this.debug('autoRenameScratchpadFromDocument: refreshing editor tabs for renamed file');
         await Utils.closeAllTabsForFile(currentFilePath);
         await Utils.openFile(newFilePath);
-        console.log('[Scratchpads] autoRenameScratchpadFromDocument: reopened renamed file in editor');
+        this.debug('autoRenameScratchpadFromDocument: reopened renamed file in editor');
       }
 
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: completed');
+      this.debug('autoRenameScratchpadFromDocument: completed');
     } catch (error) {
       console.error('[Scratchpads] autoRenameScratchpadFromDocument error:', error);
     }
@@ -449,7 +458,7 @@ export class ScratchpadsManager {
     const matchesProjectFolder = normalizedEditorPath === normalizedProjectPath;
     const isUnderScratchpadsRoot = this.isPathInsideRoot(normalizedEditorPath, normalizedRootPath);
 
-    console.log('[Scratchpads] isScratchpadDocument: path evaluation', {
+    this.debug('isScratchpadDocument: path evaluation', {
       documentFileName: document.fileName,
       editorPath,
       normalizedEditorPath,

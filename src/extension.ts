@@ -3,7 +3,7 @@ import { Config } from './config';
 import { FiletypesManager } from './filetypes.manager';
 import { ScratchpadTreeProvider } from './scratchpad-tree-provider';
 import { ScratchpadsManager } from './scratchpads.manager';
-import { CONFIG_AUTO_RENAME_FROM_CONTENT } from './consts';
+import { CONFIG_AUTO_RENAME_FROM_CONTENT, CONFIG_VERBOSE_LOGGING } from './consts';
 import Utils from './utils';
 
 /**
@@ -31,6 +31,14 @@ export async function activate(context: vscode.ExtensionContext) {
       return resolved.toLowerCase();
     }
     return resolved;
+  };
+
+
+  const logVerbose = (message: string, ...meta: unknown[]) => {
+    const verboseLogging = Config.getExtensionConfiguration(CONFIG_VERBOSE_LOGGING) as boolean;
+    if (verboseLogging) {
+      console.log('[Scratchpads]', message, ...meta);
+    }
   };
 
   // Register tree view
@@ -78,7 +86,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       if (activeDocument.isDirty) {
-        console.log('[Scratchpads] autoRenameScratchpad command: saving dirty active document before rename');
+        logVerbose('autoRenameScratchpad command: saving dirty active document before rename');
         await activeDocument.save();
       }
 
@@ -108,20 +116,20 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async (document) => {
       const autoRenameEnabled = Config.getExtensionConfiguration(CONFIG_AUTO_RENAME_FROM_CONTENT);
-      console.log('[Scratchpads] onDidSaveTextDocument: save event received', {
+      logVerbose('onDidSaveTextDocument: save event received', {
         fileName: document.fileName,
         autoRenameEnabled,
         isDirty: document.isDirty,
       });
 
       if (!autoRenameEnabled) {
-        console.log('[Scratchpads] onDidSaveTextDocument: auto rename is disabled, skipping');
+        logVerbose('onDidSaveTextDocument: auto rename is disabled, skipping');
         return;
       }
 
       const inFlightKey = normalizePathForKey(document.fileName);
       if (inFlightAutoRename.has(inFlightKey)) {
-        console.log('[Scratchpads] onDidSaveTextDocument: auto rename already in progress for file, skipping re-entrant run', {
+        console.warn('[Scratchpads] onDidSaveTextDocument: auto rename already in progress for file, skipping re-entrant run', {
           inFlightKey,
         });
         return;
@@ -129,9 +137,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
       inFlightAutoRename.add(inFlightKey);
       try {
-        console.log('[Scratchpads] onDidSaveTextDocument: auto rename enabled, invoking manager');
+        logVerbose('onDidSaveTextDocument: auto rename enabled, invoking manager');
         await scratchpadsManager.autoRenameScratchpadFromDocument(document);
-        console.log('[Scratchpads] onDidSaveTextDocument: manager call completed');
+        logVerbose('onDidSaveTextDocument: manager call completed');
       } finally {
         inFlightAutoRename.delete(inFlightKey);
       }

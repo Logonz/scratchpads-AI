@@ -6,13 +6,23 @@ import {
   CONFIG_OPENAI_API_KEY,
   CONFIG_OPENAI_MODEL,
   CONFIG_RENAME_PROVIDER,
+  CONFIG_VERBOSE_LOGGING,
 } from './consts';
 
 export type RenameProvider = 'auto' | 'vscode' | 'openai';
 
 export class AIFilenameService {
   private static log(message: string, ...meta: unknown[]): void {
+    const verboseLogging = Config.getExtensionConfiguration(CONFIG_VERBOSE_LOGGING) as boolean;
+    if (!verboseLogging) {
+      return;
+    }
+
     console.log('[Scratchpads]', message, ...meta);
+  }
+
+  private static warn(message: string, ...meta: unknown[]): void {
+    console.warn('[Scratchpads]', message, ...meta);
   }
 
   public static async suggestFilename(content: string, fileExt: string): Promise<string | undefined> {
@@ -124,7 +134,7 @@ export class AIFilenameService {
 
       return sanitized;
     } catch (error) {
-      this.log('suggestWithVSCodeLM: request failed', error);
+      this.warn('suggestWithVSCodeLM: request failed', error);
       return undefined;
     }
   }
@@ -132,7 +142,7 @@ export class AIFilenameService {
   private static async suggestWithOpenAI(content: string, fileExt: string): Promise<string | undefined> {
     const apiKey = (Config.getExtensionConfiguration(CONFIG_OPENAI_API_KEY) as string) || '';
     if (!apiKey) {
-      this.log('suggestWithOpenAI: OpenAI API key is not configured, skipping provider');
+      this.warn('suggestWithOpenAI: OpenAI API key is not configured, skipping provider');
       return undefined;
     }
 
@@ -177,7 +187,7 @@ export class AIFilenameService {
 
       const text = response.choices?.[0]?.message?.content;
       if (!text) {
-        this.log('suggestWithOpenAI: response missing choices[0].message.content');
+        this.warn('suggestWithOpenAI: response missing choices[0].message.content');
         return undefined;
       }
 
@@ -189,7 +199,7 @@ export class AIFilenameService {
 
       return sanitized;
     } catch (error) {
-      this.log('suggestWithOpenAI: request failed', error);
+      this.warn('suggestWithOpenAI: request failed', error);
       return undefined;
     }
   }
@@ -209,7 +219,7 @@ export class AIFilenameService {
       .replace(/^-|-$/g, '');
 
     if (!cleaned) {
-      this.log('sanitizeFilename: sanitized value is empty', { input });
+      this.warn('sanitizeFilename: sanitized value is empty', { input });
       return undefined;
     }
 
@@ -257,7 +267,7 @@ export class AIFilenameService {
               });
               resolve(data);
             } else {
-              this.log('postJSON: request failed with non-2xx status', {
+              this.warn('postJSON: request failed with non-2xx status', {
                 statusCode: res.statusCode,
                 responsePreview: data.slice(0, 300),
               });
@@ -269,12 +279,12 @@ export class AIFilenameService {
 
 
       req.setTimeout(timeoutMs, () => {
-        this.log('postJSON: request timed out', { timeoutMs });
+        this.warn('postJSON: request timed out', { timeoutMs });
         req.destroy(new Error(`OpenAI request timed out after ${timeoutMs}ms`));
       });
 
       req.on('error', (error) => {
-        this.log('postJSON: request errored', error);
+        this.warn('postJSON: request errored', error);
         reject(error);
       });
       req.write(requestData);
