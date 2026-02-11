@@ -104,11 +104,16 @@ export class AIFilenameService {
         vscodeAny.LanguageModelChatMessage.User(content),
       ];
 
-      const response = await model.sendRequest(prompt, {}, new vscode.CancellationTokenSource().token);
-      this.log('suggestWithVSCodeLM: request sent, collecting streamed response');
+      const tokenSource = new vscode.CancellationTokenSource();
       let output = '';
-      for await (const fragment of response.text) {
-        output += fragment;
+      try {
+        const response = await model.sendRequest(prompt, {}, tokenSource.token);
+        this.log('suggestWithVSCodeLM: request sent, collecting streamed response');
+        for await (const fragment of response.text) {
+          output += fragment;
+        }
+      } finally {
+        tokenSource.dispose();
       }
 
       const sanitized = this.sanitizeFilename(output);
@@ -200,7 +205,8 @@ export class AIFilenameService {
       .replace(/[\s_]+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
-      .slice(0, 60);
+      .slice(0, 60)
+      .replace(/^-|-$/g, '');
 
     if (!cleaned) {
       this.log('sanitizeFilename: sanitized value is empty', { input });
@@ -214,6 +220,7 @@ export class AIFilenameService {
   private static async postJSON(urlString: string, payload: object, headers: Record<string, string>): Promise<string> {
     const requestData = JSON.stringify(payload);
     const url = new URL(urlString);
+    const timeoutMs = 10000;
     this.log('postJSON: preparing request', {
       url: urlString,
       requestBytes: Buffer.byteLength(requestData),
@@ -259,6 +266,12 @@ export class AIFilenameService {
           });
         },
       );
+
+
+      req.setTimeout(timeoutMs, () => {
+        this.log('postJSON: request timed out', { timeoutMs });
+        req.destroy(new Error(`OpenAI request timed out after ${timeoutMs}ms`));
+      });
 
       req.on('error', (error) => {
         this.log('postJSON: request errored', error);

@@ -23,6 +23,15 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   const scratchpadsManager = new ScratchpadsManager(new FiletypesManager());
+  const inFlightAutoRename = new Set<string>();
+
+  const normalizePathForKey = (inputPath: string): string => {
+    const resolved = inputPath.replace(/[\\/]+$/, '');
+    if (process.platform === 'win32') {
+      return resolved.toLowerCase();
+    }
+    return resolved;
+  };
 
   // Register tree view
   const treeViewProvider = new ScratchpadTreeProvider();
@@ -67,6 +76,12 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('Scratchpads: Open a scratchpad file first');
         return;
       }
+
+      if (activeDocument.isDirty) {
+        console.log('[Scratchpads] autoRenameScratchpad command: saving dirty active document before rename');
+        await activeDocument.save();
+      }
+
       await scratchpadsManager.autoRenameScratchpadFromDocument(activeDocument);
     }),
     'scratchpads.removeAllScratchpads': wrapCommand('removeAllScratchpads', () => scratchpadsManager.removeAllScratchpads()),
@@ -104,9 +119,22 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      console.log('[Scratchpads] onDidSaveTextDocument: auto rename enabled, invoking manager');
-      await scratchpadsManager.autoRenameScratchpadFromDocument(document);
-      console.log('[Scratchpads] onDidSaveTextDocument: manager call completed');
+      const inFlightKey = normalizePathForKey(document.fileName);
+      if (inFlightAutoRename.has(inFlightKey)) {
+        console.log('[Scratchpads] onDidSaveTextDocument: auto rename already in progress for file, skipping re-entrant run', {
+          inFlightKey,
+        });
+        return;
+      }
+
+      inFlightAutoRename.add(inFlightKey);
+      try {
+        console.log('[Scratchpads] onDidSaveTextDocument: auto rename enabled, invoking manager');
+        await scratchpadsManager.autoRenameScratchpadFromDocument(document);
+        console.log('[Scratchpads] onDidSaveTextDocument: manager call completed');
+      } finally {
+        inFlightAutoRename.delete(inFlightKey);
+      }
     }),
   );
 

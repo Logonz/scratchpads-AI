@@ -259,8 +259,14 @@ export class ScratchpadsManager {
       newFilePath,
     });
 
-    if (newFilePath === currentFilePath) {
-      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped because destination path equals current path');
+    const normalizedCurrentFilePath = this.normalizePath(currentFilePath);
+    const normalizedNewFilePath = this.normalizePath(newFilePath);
+
+    if (normalizedNewFilePath === normalizedCurrentFilePath) {
+      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped because destination path equals current path', {
+        normalizedCurrentFilePath,
+        normalizedNewFilePath,
+      });
       return;
     }
 
@@ -278,8 +284,8 @@ export class ScratchpadsManager {
       });
 
       if (openEditor?.document.isDirty) {
-        console.log('[Scratchpads] autoRenameScratchpadFromDocument: saving dirty editor before rename');
-        await openEditor.document.save();
+        console.log('[Scratchpads] autoRenameScratchpadFromDocument: active editor is dirty during auto-rename. Skipping rename to avoid save-loop/re-entrancy risks.');
+        return;
       }
 
       console.log('[Scratchpads] autoRenameScratchpadFromDocument: renaming file', {

@@ -83,7 +83,8 @@
         "scratchpads.openAIApiKey": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Optional OpenAI API key used when provider is `openai` or when `auto` falls back from VS Code Language Model API"
+          "markdownDescription": "Optional OpenAI API key used when provider is `openai` or when `auto` falls back from VS Code Language Model API \u26a0\ufe0f Security note: this setting is stored in plain text in your user settings file. Do not store production secrets in shared machines.",
+          "scope": "application"
         },
         "scratchpads.openAIModel": {
           "type": "string",

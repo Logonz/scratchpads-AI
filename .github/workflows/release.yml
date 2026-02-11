@@ -43,16 +43,20 @@ jobs:
         id: metadata
         env:
           VERSION: ${{ steps.package-version.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_NAME: ${{ github.ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          FULL_SHA: ${{ github.sha }}
         run: |
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/master" ]]; then
+          if [[ "$EVENT_NAME" == "push" && "$GITHUB_REF_NAME" == "refs/heads/master" ]]; then
             TAG="v${VERSION}"
             NAME="Release version ${VERSION}"
             VSIX_NAME="vstoys-${VERSION}.vsix"
             PRERELEASE="false"
           else
-            SAFE_REF="${{ github.head_ref }}"
+            SAFE_REF="$HEAD_REF"
             SAFE_REF="${SAFE_REF//\//-}"
-            SHORT_SHA="${GITHUB_SHA::7}"
+            SHORT_SHA="${FULL_SHA::7}"
             TAG="v${VERSION}-${SAFE_REF}-${SHORT_SHA}"
             NAME="Pre-release ${VERSION} (${SAFE_REF} @ ${SHORT_SHA})"
             VSIX_NAME="vstoys-${VERSION}-${SAFE_REF}-${SHORT_SHA}.vsix"
@@ -66,9 +70,11 @@ jobs:
 
       - name: Package extension
         id: package
+        env:
+          VSIX_NAME: ${{ steps.metadata.outputs.vsix_name }}
         run: |
-          vsce package --allow-star-activation -o "${{ steps.metadata.outputs.vsix_name }}"
-          echo "vsix_path=${{ steps.metadata.outputs.vsix_name }}" >> "$GITHUB_OUTPUT"
+          vsce package --allow-star-activation -o "$VSIX_NAME"
+          echo "vsix_path=$VSIX_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
         uses: ncipollo/release-action@v1
