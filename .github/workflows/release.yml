@@ -1,0 +1,89 @@
+name: Release Extension
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Build extension
+        run: npm run vscode:prepublish
+
+      - name: Get package version
+        id: package-version
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Build release metadata
+        id: metadata
+        env:
+          VERSION: ${{ steps.package-version.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_NAME: ${{ github.ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          FULL_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "push" && "$GITHUB_REF_NAME" == "refs/heads/master" ]]; then
+            TAG="v${VERSION}"
+            NAME="Release version ${VERSION}"
+            VSIX_NAME="vstoys-${VERSION}.vsix"
+            PRERELEASE="false"
+          else
+            SAFE_REF="$HEAD_REF"
+            SAFE_REF="${SAFE_REF//\//-}"
+            SHORT_SHA="${FULL_SHA::7}"
+            TAG="v${VERSION}-${SAFE_REF}-${SHORT_SHA}"
+            NAME="Pre-release ${VERSION} (${SAFE_REF} @ ${SHORT_SHA})"
+            VSIX_NAME="vstoys-${VERSION}-${SAFE_REF}-${SHORT_SHA}.vsix"
+            PRERELEASE="true"
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "vsix_name=${VSIX_NAME}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Package extension
+        id: package
+        env:
+          VSIX_NAME: ${{ steps.metadata.outputs.vsix_name }}
+        run: |
+          vsce package --allow-star-activation -o "$VSIX_NAME"
+          echo "vsix_path=$VSIX_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "${{ steps.package.outputs.vsix_path }}"
+          name: "${{ steps.metadata.outputs.name }}"
+          commit: "${{ github.sha }}"
+          tag: "${{ steps.metadata.outputs.tag }}"
+          prerelease: ${{ steps.metadata.outputs.prerelease }}
+          allowUpdates: true
+          removeArtifacts: true
+          token: ${{ secrets.GITHUB_TOKEN }}
