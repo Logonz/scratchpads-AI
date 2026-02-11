@@ -6,6 +6,7 @@ import { Config } from './config';
 import {
   CONFIG_AUTO_FORMAT,
   CONFIG_AUTO_PASTE,
+  CONFIG_AUTO_RENAME_MIN_CHARS,
   CONFIG_DEFAULT_FILETYPE,
   CONFIG_FILE_PREFIX,
   CONFIG_PROMPT_FOR_FILENAME,
@@ -13,6 +14,7 @@ import {
   CONFIG_RENAME_WITH_EXTENSION,
   DEFAULT_FILE_PREFIX,
 } from './consts';
+import { AIFilenameService } from './ai-filename';
 import { Filetype, FiletypesManager } from './filetypes.manager';
 import { InputBox } from './input-box';
 import Utils from './utils';
@@ -190,6 +192,62 @@ export class ScratchpadsManager {
     }
   }
 
+
+  /**
+   * Automatically renames a scratchpad file based on its content.
+   * Uses VS Code Language Model API first (if configured), then optional OpenAI fallback.
+   */
+  public async autoRenameScratchpadFromDocument(document: vscode.TextDocument): Promise<void> {
+    if (!this.isScratchpadDocument(document)) {
+      return;
+    }
+
+    const content = document.getText().trim();
+    const minChars = (Config.getExtensionConfiguration(CONFIG_AUTO_RENAME_MIN_CHARS) as number) || 20;
+
+    if (content.length < minChars) {
+      return;
+    }
+
+    const currentFilePath = document.fileName;
+    const currentFileName = path.basename(currentFilePath);
+    const currentBaseName = path.basename(currentFileName, path.extname(currentFileName));
+
+    const maxChars = 6000;
+    const suggestion = await AIFilenameService.suggestFilename(content.slice(0, maxChars), path.extname(currentFileName));
+
+    if (!suggestion || suggestion === currentBaseName) {
+      return;
+    }
+
+    const finalFileName = AIFilenameService.buildFinalFilename(suggestion, currentFilePath);
+    const newFilePath = Utils.getScratchpadFilePath(finalFileName);
+
+    if (newFilePath === currentFilePath) {
+      return;
+    }
+
+    if (fs.existsSync(newFilePath)) {
+      return;
+    }
+
+    try {
+      const openEditor = Utils.findOpenEditor(currentFilePath);
+      if (openEditor?.document.isDirty) {
+        await openEditor.document.save();
+      }
+
+      await Utils.renameFile(currentFilePath, newFilePath);
+
+      if (openEditor) {
+        await Utils.closeAllTabsForFile(currentFilePath);
+        await Utils.openFile(newFilePath);
+      }
+    } catch (error) {
+      console.error('[Scratchpads] autoRenameScratchpadFromDocument error:', error);
+    }
+  }
+
   /**
    * Remove a single scratchpad file
    */
@@ -309,6 +367,11 @@ export class ScratchpadsManager {
    *
    * @param {TextEditor} editor The tab to inspect
    */
+  private isScratchpadDocument(document: vscode.TextDocument): boolean {
+    const editorPath = path.dirname(document.fileName);
+    return editorPath === Config.projectScratchpadsPath;
+  }
+
   private isScratchpadEditor(editor?: vscode.TextEditor) {
     if (editor) {
       const editorPath = path.dirname(editor.document.fileName);
