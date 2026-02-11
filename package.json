@@ -59,6 +59,38 @@
           "default": false,
           "description": "Include the file extension when renaming a scratchpad"
         },
+        "scratchpads.autoRenameFromContent": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically rename scratchpads from file content when the file is saved"
+        },
+        "scratchpads.renameProvider": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "vscode",
+            "openai"
+          ],
+          "description": "AI provider for content-based file renaming. 'auto' tries VS Code Language Model API first, then OpenAI if configured"
+        },
+        "scratchpads.autoRenameMinChars": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "description": "Minimum file content length before automatic content-based rename runs"
+        },
+        "scratchpads.openAIApiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional OpenAI API key used when provider is `openai` or when `auto` falls back from VS Code Language Model API \u26a0\ufe0f Security note: this setting is stored in plain text in your user settings file. Do not store production secrets in shared machines.",
+          "scope": "application"
+        },
+        "scratchpads.openAIModel": {
+          "type": "string",
+          "default": "gpt-5-mini",
+          "description": "OpenAI model used for content-based file renaming"
+        },
         "scratchpads.filePrefix": {
           "type": "string",
           "default": "scratch",
@@ -77,7 +109,7 @@
         "scratchpads.useSubfolders": {
           "type": "boolean",
           "default": true,
-          "description": "⚠️ DEPRECATED: Use 'useGlobalFolder' instead. Save scratchpads in project-specific subfolders. When disabled, all scratchpads are saved in a single folder.",
+          "description": "\u26a0\ufe0f DEPRECATED: Use 'useGlobalFolder' instead. Save scratchpads in project-specific subfolders. When disabled, all scratchpads are saved in a single folder.",
           "deprecationMessage": "This setting is deprecated. Use 'scratchpads.useGlobalFolder' instead for clearer configuration."
         },
         "scratchpads.useGlobalFolder": {
@@ -176,6 +208,10 @@
         "command": "scratchpads.tree.sortByType",
         "title": "Sort by Type",
         "icon": "$(file)"
+      },
+      {
+        "command": "scratchpads.autoRenameScratchpad",
+        "title": "Scratchpads: Auto rename current scratchpad from content"
       }
     ],
     "menus": {
