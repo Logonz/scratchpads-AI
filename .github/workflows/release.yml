@@ -47,6 +47,7 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref }}
           HEAD_REF: ${{ github.head_ref }}
           FULL_SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [[ "$EVENT_NAME" == "push" && "$GITHUB_REF_NAME" == "refs/heads/master" ]]; then
             TAG="v${VERSION}"
@@ -54,12 +55,10 @@ jobs:
             VSIX_NAME="vstoys-${VERSION}.vsix"
             PRERELEASE="false"
           else
-            SAFE_REF="$HEAD_REF"
-            SAFE_REF="${SAFE_REF//\//-}"
-            SHORT_SHA="${FULL_SHA::7}"
-            TAG="v${VERSION}-${SAFE_REF}-${SHORT_SHA}"
-            NAME="Pre-release ${VERSION} (${SAFE_REF} @ ${SHORT_SHA})"
-            VSIX_NAME="vstoys-${VERSION}-${SAFE_REF}-${SHORT_SHA}.vsix"
+            PR_SUFFIX="pr-${PR_NUMBER}"
+            TAG="v${VERSION}-${PR_SUFFIX}"
+            NAME="Pre-release ${VERSION} (PR #${PR_NUMBER})"
+            VSIX_NAME="vstoys-${VERSION}-${PR_SUFFIX}.vsix"
             PRERELEASE="true"
           fi
 
