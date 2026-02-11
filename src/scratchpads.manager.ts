@@ -228,11 +228,24 @@ export class ScratchpadsManager {
     const currentFilePath = document.fileName;
     const currentFileName = path.basename(currentFilePath);
     const currentBaseName = path.basename(currentFileName, path.extname(currentFileName));
+    const configuredPrefix = (Config.getExtensionConfiguration(CONFIG_FILE_PREFIX) as string) || DEFAULT_FILE_PREFIX;
+    const escapedPrefix = configuredPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const scratchNamePattern = new RegExp(`^${escapedPrefix}\\d*$`);
     console.log('[Scratchpads] autoRenameScratchpadFromDocument: current file context', {
       currentFilePath,
       currentFileName,
       currentBaseName,
+      configuredPrefix,
+      scratchNamePattern: scratchNamePattern.source,
     });
+
+    if (!scratchNamePattern.test(currentBaseName)) {
+      console.log('[Scratchpads] autoRenameScratchpadFromDocument: skipped because file name does not match scratch prefix pattern', {
+        currentBaseName,
+        configuredPrefix,
+      });
+      return;
+    }
 
     const maxChars = 6000;
     console.log('[Scratchpads] autoRenameScratchpadFromDocument: requesting AI suggestion', {
