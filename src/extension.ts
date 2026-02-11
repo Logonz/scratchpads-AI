@@ -93,11 +93,20 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async (document) => {
       const autoRenameEnabled = Config.getExtensionConfiguration(CONFIG_AUTO_RENAME_FROM_CONTENT);
+      console.log('[Scratchpads] onDidSaveTextDocument: save event received', {
+        fileName: document.fileName,
+        autoRenameEnabled,
+        isDirty: document.isDirty,
+      });
+
       if (!autoRenameEnabled) {
+        console.log('[Scratchpads] onDidSaveTextDocument: auto rename is disabled, skipping');
         return;
       }
 
+      console.log('[Scratchpads] onDidSaveTextDocument: auto rename enabled, invoking manager');
       await scratchpadsManager.autoRenameScratchpadFromDocument(document);
+      console.log('[Scratchpads] onDidSaveTextDocument: manager call completed');
     }),
   );
 

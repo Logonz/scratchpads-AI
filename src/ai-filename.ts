@@ -11,20 +11,38 @@ import {
 export type RenameProvider = 'auto' | 'vscode' | 'openai';
 
 export class AIFilenameService {
+  private static log(message: string, ...meta: unknown[]): void {
+    console.log('[Scratchpads]', message, ...meta);
+  }
+
   public static async suggestFilename(content: string, fileExt: string): Promise<string | undefined> {
     const provider = (Config.getExtensionConfiguration(CONFIG_RENAME_PROVIDER) as RenameProvider) || 'auto';
+    this.log('suggestFilename: starting suggestion', {
+      provider,
+      fileExt,
+      contentLength: content.length,
+      preview: content.slice(0, 120),
+    });
 
     if (provider === 'vscode' || provider === 'auto') {
+      this.log('suggestFilename: attempting VS Code LM provider');
       const vscodeSuggestion = await this.suggestWithVSCodeLM(content, fileExt);
       if (vscodeSuggestion) {
+        this.log('suggestFilename: VS Code LM suggestion succeeded', { vscodeSuggestion });
         return vscodeSuggestion;
       }
+
+      this.log('suggestFilename: VS Code LM suggestion unavailable, continuing fallback flow');
     }
 
     if (provider === 'openai' || provider === 'auto') {
-      return await this.suggestWithOpenAI(content, fileExt);
+      this.log('suggestFilename: attempting OpenAI provider');
+      const openAISuggestion = await this.suggestWithOpenAI(content, fileExt);
+      this.log('suggestFilename: OpenAI provider result', { openAISuggestion });
+      return openAISuggestion;
     }
 
+    this.log('suggestFilename: no provider path produced a suggestion');
     return undefined;
   }
 
@@ -42,6 +60,7 @@ export class AIFilenameService {
       };
 
       if (!vscodeAny.lm || !vscodeAny.LanguageModelChatMessage) {
+        this.log('suggestWithVSCodeLM: vscode.lm or LanguageModelChatMessage API unavailable in this runtime');
         return undefined;
       }
 
@@ -62,14 +81,19 @@ export class AIFilenameService {
         | undefined;
 
       for (const selector of selectors) {
+        this.log('suggestWithVSCodeLM: selecting chat model with selector', selector);
         const [candidate] = await vscodeAny.lm.selectChatModels(selector);
         if (candidate) {
+          this.log('suggestWithVSCodeLM: model found for selector', selector);
           model = candidate;
           break;
         }
+
+        this.log('suggestWithVSCodeLM: no model found for selector', selector);
       }
 
       if (!model) {
+        this.log('suggestWithVSCodeLM: no VS Code model available after all selectors');
         return undefined;
       }
 
@@ -81,13 +105,21 @@ export class AIFilenameService {
       ];
 
       const response = await model.sendRequest(prompt, {}, new vscode.CancellationTokenSource().token);
+      this.log('suggestWithVSCodeLM: request sent, collecting streamed response');
       let output = '';
       for await (const fragment of response.text) {
         output += fragment;
       }
 
-      return this.sanitizeFilename(output);
-    } catch {
+      const sanitized = this.sanitizeFilename(output);
+      this.log('suggestWithVSCodeLM: response completed', {
+        rawOutput: output,
+        sanitized,
+      });
+
+      return sanitized;
+    } catch (error) {
+      this.log('suggestWithVSCodeLM: request failed', error);
       return undefined;
     }
   }
@@ -95,10 +127,17 @@ export class AIFilenameService {
   private static async suggestWithOpenAI(content: string, fileExt: string): Promise<string | undefined> {
     const apiKey = (Config.getExtensionConfiguration(CONFIG_OPENAI_API_KEY) as string) || '';
     if (!apiKey) {
+      this.log('suggestWithOpenAI: OpenAI API key is not configured, skipping provider');
       return undefined;
     }
 
     const model = (Config.getExtensionConfiguration(CONFIG_OPENAI_MODEL) as string) || 'gpt-5-mini';
+    this.log('suggestWithOpenAI: building request payload', {
+      model,
+      fileExt,
+      contentLength: content.length,
+      preview: content.slice(0, 120),
+    });
 
     const payload = {
       model,
@@ -118,8 +157,13 @@ export class AIFilenameService {
     };
 
     try {
+      this.log('suggestWithOpenAI: sending request to OpenAI chat completions API');
       const rawResponse = await this.postJSON('https://api.openai.com/v1/chat/completions', payload, {
         Authorization: `Bearer ${apiKey}`,
+      });
+      this.log('suggestWithOpenAI: raw response received', {
+        rawResponseLength: rawResponse.length,
+        rawResponsePreview: rawResponse.slice(0, 300),
       });
 
       const response = JSON.parse(rawResponse) as {
@@ -128,11 +172,19 @@ export class AIFilenameService {
 
       const text = response.choices?.[0]?.message?.content;
       if (!text) {
+        this.log('suggestWithOpenAI: response missing choices[0].message.content');
         return undefined;
       }
 
-      return this.sanitizeFilename(text);
-    } catch {
+      const sanitized = this.sanitizeFilename(text);
+      this.log('suggestWithOpenAI: response parsed', {
+        rawText: text,
+        sanitized,
+      });
+
+      return sanitized;
+    } catch (error) {
+      this.log('suggestWithOpenAI: request failed', error);
       return undefined;
     }
   }
@@ -151,15 +203,21 @@ export class AIFilenameService {
       .slice(0, 60);
 
     if (!cleaned) {
+      this.log('sanitizeFilename: sanitized value is empty', { input });
       return undefined;
     }
 
+    this.log('sanitizeFilename: sanitized filename computed', { input, cleaned });
     return cleaned;
   }
 
   private static async postJSON(urlString: string, payload: object, headers: Record<string, string>): Promise<string> {
     const requestData = JSON.stringify(payload);
     const url = new URL(urlString);
+    this.log('postJSON: preparing request', {
+      url: urlString,
+      requestBytes: Buffer.byteLength(requestData),
+    });
 
     return await new Promise((resolve, reject) => {
       const req = https.request(
@@ -174,6 +232,10 @@ export class AIFilenameService {
           },
         },
         (res) => {
+          this.log('postJSON: response stream opened', {
+            statusCode: res.statusCode,
+            statusMessage: res.statusMessage,
+          });
           let data = '';
 
           res.on('data', (chunk) => {
@@ -182,15 +244,26 @@ export class AIFilenameService {
 
           res.on('end', () => {
             if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              this.log('postJSON: request completed successfully', {
+                statusCode: res.statusCode,
+                responseBytes: data.length,
+              });
               resolve(data);
             } else {
+              this.log('postJSON: request failed with non-2xx status', {
+                statusCode: res.statusCode,
+                responsePreview: data.slice(0, 300),
+              });
               reject(new Error(`OpenAI request failed with status ${res.statusCode}: ${data}`));
             }
           });
         },
       );
 
-      req.on('error', reject);
+      req.on('error', (error) => {
+        this.log('postJSON: request errored', error);
+        reject(error);
+      });
       req.write(requestData);
       req.end();
     });
