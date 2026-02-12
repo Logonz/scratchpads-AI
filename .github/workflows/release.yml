@@ -44,20 +44,29 @@ jobs:
         env:
           VERSION: ${{ steps.package-version.outputs.version }}
           EVENT_NAME: ${{ github.event_name }}
-          GITHUB_REF_NAME: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
           HEAD_REF: ${{ github.head_ref }}
           FULL_SHA: ${{ github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [[ "$EVENT_NAME" == "push" && "$GITHUB_REF_NAME" == "refs/heads/master" ]]; then
+          if [[ "$EVENT_NAME" == "push" && ("$REF_NAME" == "master" || "$REF" == "refs/heads/master") ]]; then
             TAG="v${VERSION}"
             NAME="Release version ${VERSION}"
             VSIX_NAME="scratchpads-ai-${VERSION}.vsix"
             PRERELEASE="false"
           else
-            PR_SUFFIX="pr-${PR_NUMBER}"
+            if [[ -n "$PR_NUMBER" ]]; then
+              PR_SUFFIX="pr-${PR_NUMBER}"
+            else
+              PR_SUFFIX="sha-${FULL_SHA:0:7}"
+            fi
             TAG="v${VERSION}-${PR_SUFFIX}"
-            NAME="Pre-release ${VERSION} (PR #${PR_NUMBER})"
+            if [[ -n "$PR_NUMBER" ]]; then
+              NAME="Pre-release ${VERSION} (PR #${PR_NUMBER})"
+            else
+              NAME="Pre-release ${VERSION} (${FULL_SHA:0:7})"
+            fi
             VSIX_NAME="scratchpads-ai-${VERSION}-${PR_SUFFIX}.vsix"
             PRERELEASE="true"
           fi
