@@ -52,13 +52,13 @@ jobs:
           if [[ "$EVENT_NAME" == "push" && "$GITHUB_REF_NAME" == "refs/heads/master" ]]; then
             TAG="v${VERSION}"
             NAME="Release version ${VERSION}"
-            VSIX_NAME="vstoys-${VERSION}.vsix"
+            VSIX_NAME="scratchpads-ai-${VERSION}.vsix"
             PRERELEASE="false"
           else
             PR_SUFFIX="pr-${PR_NUMBER}"
             TAG="v${VERSION}-${PR_SUFFIX}"
             NAME="Pre-release ${VERSION} (PR #${PR_NUMBER})"
-            VSIX_NAME="vstoys-${VERSION}-${PR_SUFFIX}.vsix"
+            VSIX_NAME="scratchpads-ai-${VERSION}-${PR_SUFFIX}.vsix"
             PRERELEASE="true"
           fi
 
